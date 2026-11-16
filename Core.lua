@@ -30,7 +30,7 @@ local defaults = {
 	copyLines = 300,
 }
 
-ACore.New(ADDON, ns, { db = "AChatDB", defaults = defaults })
+ACore.New(ADDON, ns, { db = "AChatDB", defaults = defaults, profile = true })
 
 ns.levels = {}
 
