@@ -1,0 +1,15 @@
+## Interface: 16001
+## Title: AChat
+## Notes: Cleaner chat with short channel names, timestamps, links you can copy, highlights and a copy window
+## Version: 0.1.0
+## Category: Chat
+## IconTexture: Interface\Icons\INV_Letter_15
+## Dependencies: ACore
+## SavedVariables: AChatDB
+
+Core.lua
+Format.lua
+Filter.lua
+Copy.lua
+Frames.lua
+Options.lua
