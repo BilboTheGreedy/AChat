@@ -24,7 +24,7 @@ local function tabOf(frame)
 end
 
 local function fade(region)
-	if region and region.SetAlpha then region:SetAlpha(0) end
+	if type(region) == "table" and region.SetAlpha then region:SetAlpha(0) end
 end
 
 local function styleEdit(frame)
@@ -76,6 +76,10 @@ local function available(kind)
 	end
 	if kind == "GUILD" then return IsInGuild and IsInGuild() and true or false end
 	if kind == "OFFICER" then
+		if C_GuildInfo and C_GuildInfo.IsGuildOfficer then
+			local ok, v = pcall(C_GuildInfo.IsGuildOfficer)
+			return ok and v and true or false
+		end
 		if C_GuildInfo and C_GuildInfo.CanEditOfficerNote then
 			local ok, v = pcall(C_GuildInfo.CanEditOfficerNote)
 			return ok and v and true or false
@@ -99,10 +103,10 @@ end
 
 local function onTab(eb)
 	if not ns.db.tabCycle then return end
-	local text = eb:GetText() or ""
-	if text ~= "" then return end
+	local text = eb:GetText()
+	if ns.IsSecret(text) or (text or "") ~= "" then return end
 	local kind = eb:GetAttribute("chatType")
-	if kind == "WHISPER" or kind == "BN_WHISPER" or kind == "CHANNEL" then return end
+	if ns.IsSecret(kind) or kind == "WHISPER" or kind == "BN_WHISPER" or kind == "CHANNEL" then return end
 	local nextKind = ns.NextChannel(kind, IsShiftKeyDown and IsShiftKeyDown())
 	eb:SetAttribute("chatType", nextKind)
 	if eb.UpdateHeader then
@@ -208,7 +212,7 @@ function ns.Apply(frame)
 		local cur = frame:GetMaxLines()
 		if type(cur) == "number" and cur < db.lines then frame:SetMaxLines(db.lines) end
 	end
-	if db.shorten or db.levels then ns.Wrap(frame) end
+	if db.shorten or db.levels or db.keep then ns.Wrap(frame) end
 end
 
 local BUTTONS = { "ChatFrameMenuButton", "ChatFrameChannelButton", "QuickJoinToastButton", "ChatFrameToggleVoiceDeafenButton", "ChatFrameToggleVoiceMuteButton", "TextToSpeechButtonFrame" }
@@ -236,6 +240,62 @@ local function buttons()
 	end
 end
 
+local tabsHidden
+local function tabs()
+	local on = ns.db.minimal
+	if on then
+		tabsHidden = true
+	elseif not tabsHidden then
+		return
+	end
+	CHAT_FRAME_TAB_NORMAL_NOMOUSE_ALPHA = on and 0 or 0.2
+	CHAT_FRAME_TAB_SELECTED_NOMOUSE_ALPHA = on and 0 or 0.4
+	for _, f in ipairs(ns.Frames()) do
+		local tab = tabOf(f)
+		if FCFTab_UpdateAlpha then
+			pcall(FCFTab_UpdateAlpha, f)
+		elseif type(tab) == "table" and tab.SetAlpha then
+			tab.noMouseAlpha = on and 0 or (f == SELECTED_CHAT_FRAME and 0.4 or 0.2)
+			tab:SetAlpha(tab.noMouseAlpha)
+		end
+	end
+	if not on then tabsHidden = nil end
+end
+
+function ns.ChannelColors()
+	local colors = ns.db.channelColors
+	if type(colors) ~= "table" or not next(colors) or not GetChannelList or not ChangeChatColor then return 0 end
+	local list = { GetChannelList() }
+	local n = 0
+	for i = 1, #list, 3 do
+		local id, name = list[i], list[i + 1]
+		if not ns.IsSecret(id) and not ns.IsSecret(name) and type(id) == "number" and type(name) == "string" then
+			local c = colors[name:lower()]
+			if c then
+				pcall(ChangeChatColor, "CHANNEL" .. id, c[1], c[2], c[3])
+				n = n + 1
+			end
+		end
+	end
+	return n
+end
+
+function ns.SetChannelColor(name, hex)
+	name = name:lower():gsub("^%s+", ""):gsub("%s+$", "")
+	if name == "" or type(hex) ~= "string" then return false end
+	if hex:lower() == "off" then
+		ns.db.channelColors[name] = nil
+		ns.Print(name .. " colour removed, reload to see the old one")
+		return true
+	end
+	local r, g, b = hex:match("^#?(%x%x)(%x%x)(%x%x)$")
+	if not r then return false end
+	ns.db.channelColors[name] = { tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255 }
+	ns.Print(name .. " colour saved")
+	ns.ChannelColors()
+	return true
+end
+
 local function globals()
 	local db = ns.db
 	if ChatTypeInfo then
@@ -253,17 +313,19 @@ local function globals()
 			end
 		end
 	end
-	if SetCVar then
-		pcall(SetCVar, "showTimestamps", db.timestamp or "none")
-		pcall(SetCVar, "whisperMode", db.whisperMode or "inline")
+	local setCVar = (C_CVar and C_CVar.SetCVar) or SetCVar
+	if setCVar then
+		pcall(setCVar, "showTimestamps", db.timestamp or "none")
+		pcall(setCVar, "whisperMode", db.whisperMode or "inline")
 	end
-	CHAT_TIMESTAMP_FORMAT = db.timestamp
 end
 
 function ns.ApplyAll()
 	globals()
 	for _, f in ipairs(ns.Frames()) do ns.Apply(f) end
 	buttons()
+	tabs()
+	ns.ChannelColors()
 end
 
 ns:Listen("LOGIN", function()
@@ -278,6 +340,7 @@ ns:Listen("LOGIN", function()
 	end
 end)
 ns:Listen("OPTIONS", function() ns.ApplyAll() end)
+ns:On("CHANNEL_UI_UPDATE", function() ns.Debounce("channels", 1, ns.ChannelColors) end)
 ns:On("PLAYER_REGEN_ENABLED", function()
 	if ns.pendingButtons then
 		ns.pendingButtons = nil

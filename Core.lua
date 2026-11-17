@@ -28,9 +28,13 @@ local defaults = {
 	fadeTime = 120,
 	lines = 500,
 	copyLines = 300,
+	keep = false,
+	keepLines = 60,
+	minimal = false,
+	channelColors = {},
 }
 
-ACore.New(ADDON, ns, { db = "AChatDB", defaults = defaults, profile = true })
+ACore.New(ADDON, ns, { db = "AChatDB", defaults = defaults, profile = true, shared = { "saved" } })
 
 ns.levels = {}
 
@@ -67,6 +71,7 @@ ACore.Register({
 	title = "AChat",
 	slash = "/achat",
 	desc = "chat tweaks",
+	options = function() return ns.Options() end,
 	toggle = function() ns.OpenOptions() end,
 })
 
@@ -83,6 +88,11 @@ SlashCmdList["ACHAT"] = function(msg)
 		ns.RemoveKeyword(rest)
 	elseif cmd == "keywords" then
 		ns.Print(#ns.db.keywords > 0 and table.concat(ns.db.keywords, ", ") or "no keywords")
+	elseif cmd == "color" or cmd == "colour" then
+		local name, hex = rest:match("^(.-)%s+(%S+)$")
+		if not name or name == "" or not ns.SetChannelColor(name, hex) then
+			ns.Print("usage: /achat color <channel name> <rrggbb or off>")
+		end
 	else
 		ns.OpenOptions()
 	end
@@ -120,12 +130,13 @@ function ns.SetKeywords(text)
 end
 
 local function tellTarget(msg)
-	if not UnitExists or not UnitExists("target") or not UnitIsPlayer("target") then
+	local ok, player = pcall(UnitIsPlayer, "target")
+	if not ok or ns.IsSecret(player) or not player then
 		ns.Print("no player targeted")
 		return
 	end
 	local name = GetUnitName and GetUnitName("target", true) or UnitName("target")
-	if type(name) ~= "string" or ns.IsSecret(name) then return end
+	if ns.IsSecret(name) or type(name) ~= "string" then return end
 	name = name:gsub("%s", "")
 	if msg and msg ~= "" then
 		if C_ChatInfo and C_ChatInfo.SendChatMessage then

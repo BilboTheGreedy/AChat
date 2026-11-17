@@ -44,6 +44,64 @@ function ns.Format(text)
 end
 
 local wrapped = {}
+local base = {}
+local charKey
+
+local function num(v)
+	if ns.IsSecret(v) or type(v) ~= "number" then return nil end
+	return v
+end
+
+function ns.Store(frame, create)
+	local name = frame.GetName and frame:GetName()
+	if not charKey or type(name) ~= "string" then return nil end
+	local saved = ns.db.saved
+	if type(saved) ~= "table" then
+		if not create then return nil end
+		saved = {}
+		ns.db.saved = saved
+	end
+	local mine = saved[charKey]
+	if type(mine) ~= "table" then
+		if not create then return nil end
+		mine = {}
+		saved[charKey] = mine
+	end
+	if type(mine[name]) ~= "table" and create then mine[name] = {} end
+	return mine[name]
+end
+
+function ns.Keep(frame, text, r, g, b)
+	if not base[frame] or #text > 600 then return end
+	local list = ns.Store(frame, true)
+	if not list then return end
+	list[#list + 1] = { text, num(r) or 1, num(g) or 1, num(b) or 1 }
+	local max = ns.db.keepLines or 60
+	while #list > max do table.remove(list, 1) end
+end
+
+function ns.Replay()
+	local n = 0
+	if not charKey then return n end
+	if not ns.db.keep then
+		if type(ns.db.saved) == "table" then ns.db.saved[charKey] = nil end
+		return n
+	end
+	for _, f in ipairs(ns.Frames()) do
+		local orig = wrapped[f]
+		local list = orig and ns.Store(f)
+		if list then
+			for _, m in ipairs(list) do
+				if type(m) == "table" and type(m[1]) == "string" then
+					orig(f, m[1], (num(m[2]) or 1) * 0.75, (num(m[3]) or 1) * 0.75, (num(m[4]) or 1) * 0.75)
+					n = n + 1
+				end
+			end
+		end
+	end
+	return n
+end
+
 function ns.Wrap(frame)
 	if wrapped[frame] or ns.IsCombatLog(frame) then return end
 	local orig = frame.AddMessage
@@ -51,22 +109,29 @@ function ns.Wrap(frame)
 	wrapped[frame] = orig
 	frame.AddMessage = function(self, text, ...)
 		local db = ns.db
-		if db and (db.shorten or db.levels) and not ns.IsSecret(text) and type(text) == "string" then
-			local ok, out = pcall(ns.Format, text)
-			if ok and type(out) == "string" then text = out end
+		if db and not ns.IsSecret(text) and type(text) == "string" then
+			if db.shorten or db.levels then
+				local ok, out = pcall(ns.Format, text)
+				if ok and type(out) == "string" then text = out end
+			end
+			if db.keep then pcall(ns.Keep, self, text, ...) end
 		end
 		return orig(self, text, ...)
 	end
 end
 
 function ns.WrapAll()
-	if not ns.db.shorten and not ns.db.levels then return end
-	for _, f in ipairs(ns.Frames()) do ns.Wrap(f) end
+	local db = ns.db
+	if not db.shorten and not db.levels and not db.keep then return end
+	for _, f in ipairs(ns.Frames()) do
+		if not ns.IsCombatLog(f) then base[f] = true end
+		ns.Wrap(f)
+	end
 end
 
 local function remember(name, level)
-	if type(name) ~= "string" or type(level) ~= "number" then return end
-	if ns.IsSecret(name) or ns.IsSecret(level) or level < 1 then return end
+	if ns.IsSecret(name) or ns.IsSecret(level) then return end
+	if type(name) ~= "string" or type(level) ~= "number" or level < 1 then return end
 	ns.levels[ns.Short(name)] = level
 end
 
@@ -109,7 +174,9 @@ ns:Listen("LOGIN", function()
 	unit("player")
 	group()
 	guild()
+	charKey = ACore.CharKey()
 	ns.WrapAll()
+	ns.Replay()
 end)
 ns:On("GROUP_ROSTER_UPDATE", function() ns.Debounce("group", 1, group) end)
 ns:On("GUILD_ROSTER_UPDATE", function() ns.Debounce("guild", 2, guild) end)

@@ -104,16 +104,16 @@ local function filter(_, event, msg, sender, ...)
 	local cached = lineID and lines[lineID]
 	if not cached then
 		cached = { msg = msg }
-		if db.spam and isSpam(event, msg, sender) then
+		if db.spam and lineID and isSpam(event, msg, sender) then
 			cached.drop = true
 		else
 			if db.urls then cached.msg = ns.Urls(cached.msg) end
 			if db.highlight and not OWN[event] and ns.Short(sender) ~= ns.playerName then
 				local out, hit = ns.Highlight(cached.msg)
 				cached.msg = out
-				if hit and db.highlightSound then ns.Sound("RAID_WARNING", 8959) end
+				if hit and db.highlightSound and lineID then ns.Sound("RAID_WARNING", 8959) end
 			end
-			if db.whisperSound and (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") then
+			if db.whisperSound and lineID and (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") then
 				ns.Sound("TELL_MESSAGE", 3081)
 			end
 		end
